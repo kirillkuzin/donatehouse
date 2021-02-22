@@ -1,68 +1,58 @@
 import json
-import configparser
 
 import websockets
+import agorartc
 from fastapi import FastAPI, Query
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, HTMLResponse
+from fastapi.templating import Jinja2Templates
 from gtts import gTTS
-
-from donatehouse.da import DonationAlertsApi
-from donatehouse import settings
-
 from clubhouse.clubhouse import Clubhouse
 
-# Set some global variables
-try:
-    import agorartc
-    RTC = agorartc.createRtcEngineBridge()
-    eventHandler = agorartc.RtcEngineEventHandlerBase()
-    RTC.initEventHandler(eventHandler)
-    # 0xFFFFFFFE will exclude Chinese servers from Agora's servers.
-    RTC.initialize(Clubhouse.AGORA_KEY, None, agorartc.AREA_CODE_GLOB & 0xFFFFFFFE)
-    # Enhance voice quality
-    if RTC.setAudioProfile(
-            agorartc.AUDIO_PROFILE_MUSIC_HIGH_QUALITY_STEREO,
-            agorartc.AUDIO_SCENARIO_GAME_STREAMING
-        ) < 0:
-        print("[-] Failed to set the high quality audio profile")
-except ImportError:
-    RTC = None
-
-
-def read_config(filename='setting.ini'):
-    """ (str) -> dict of str
-    Read Config
-    """
-    config = configparser.ConfigParser()
-    config.read(filename)
-    if "Account" in config:
-        return dict(config['Account'])
-    return dict()
+from donatehouse import da
+from donatehouse import settings
+from donatehouse import utils
 
 
 app = FastAPI()
-da = DonationAlertsApi(settings.CLIENT_ID,
-                       settings.REDIRECT_URI,
-                       settings.SCOPE)
-user_config = read_config()
+templates = Jinja2Templates(directory='templates')
+
+da = da.DonationAlertsApi(settings.CLIENT_ID,
+                          settings.REDIRECT_URI,
+                          settings.SCOPE)
+
+user_config = utils.read_config()
 user_id = user_config.get('user_id')
 user_token = user_config.get('user_token')
 user_device = user_config.get('user_device')
-client = Clubhouse(
-            user_id=user_id,
-            user_token=user_token,
-            user_device=user_device
-        )
-channel_info = client.join_channel(settings.CHANNEL)
-# import time
-# time.sleep(10)
-client.accept_speaker_invite(settings.CHANNEL, '0')
-token = channel_info['token']
-RTC.joinChannel(token, settings.CHANNEL, "", int(user_id))
+client = Clubhouse(user_id=user_id,
+                   user_token=user_token,
+                   user_device=user_device)
+
+RTC = agorartc.createRtcEngineBridge()
+eventHandler = agorartc.RtcEngineEventHandlerBase()
+RTC.initEventHandler(eventHandler)
+# 0xFFFFFFFE will exclude Chinese servers from Agora's servers.
+RTC.initialize(Clubhouse.AGORA_KEY,
+               None,
+               agorartc.AREA_CODE_GLOB & 0xFFFFFFFE)
+# Enhance voice quality
+RTC.setAudioProfile(agorartc.AUDIO_PROFILE_MUSIC_HIGH_QUALITY_STEREO,
+                    agorartc.AUDIO_SCENARIO_GAME_STREAMING)
 
 
 @app.get('/')
 async def index():
+    if not (user_id and user_token and user_device):
+        return RedirectResponse('/config')
+
+    utils.write_config(user_id, user_token, user_device)
+
+    channel_info = client.join_channel(settings.CHANNEL)
+    client.accept_speaker_invite(settings.CHANNEL, '0')
+
+    channel_token = channel_info['token']
+    RTC.joinChannel(channel_token, settings.CHANNEL, "", int(user_id))
+
     return RedirectResponse(da.authorize())
 
 
@@ -71,6 +61,16 @@ async def token(access_token: str = Query(...)):
     da.set_access_token(access_token)
     da.get_user_info()
     await connect()
+
+
+@app.get('/config', response_class=HTMLResponse)
+async def config_page():
+    pass
+
+
+@app.post('/config')
+async def update_config():
+    pass
 
 
 async def connect():
@@ -89,7 +89,7 @@ async def connect():
             data = data['result']['data']['data']
             username = data['username']
             message = data['message']
-            mytext = f'Message from {username}. {message}'
-            myobj = gTTS(text=mytext, lang='en', slow=False)
-            myobj.save('donation.mp3')
+            text_to_speech = f'Message from {username}. {message}'
+            tts_obj = gTTS(text=text_to_speech, lang='en', slow=False)
+            tts_obj.save('donation.mp3')
             RTC.startAudioMixing('donation.mp3', False, True, 1)
