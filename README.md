@@ -1,5 +1,5 @@
 # 👋 donatehouse
-Service for broadcasting donation events to 
+A service for launching a bot that broadcasts donation events to
 [Clubhouse](https://www.joinclubhouse.com) room. 
 
 Used [clubhouse-py](https://github.com/stypr/clubhouse-py) and 
