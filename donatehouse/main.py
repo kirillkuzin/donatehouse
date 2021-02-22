@@ -15,6 +15,7 @@ from donatehouse import da
 from donatehouse import settings
 from donatehouse import utils
 
+
 app = FastAPI()
 templates = Jinja2Templates(directory='donatehouse/templates')
 
@@ -195,9 +196,5 @@ async def connect():
             await asyncio.sleep(0.5)
             RTC.startAudioMixing('donation.mp3', False, True, 1)
             donation_duration = RTC.getAudioMixingDuration()
-            # current_position = 0
-            # while current_position != donation_duration:
-            #     current_position = RTC.getAudioMixingCurrentPosition()
-            #     if current_position ==
             await asyncio.sleep(donation_duration / 1000 + 0.5)
             RTC.leaveChannel()
