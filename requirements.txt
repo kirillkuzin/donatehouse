@@ -1,0 +1,7 @@
+uvicorn==0.13.4
+gTTS==2.2.2
+fastapi==0.63.0
+clubhouse-py==304.0.1
+agora-python-sdk==3.1.2.2
+requests==2.25.1
+websockets==8.1
