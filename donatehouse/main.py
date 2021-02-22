@@ -4,7 +4,7 @@ import asyncio
 
 import websockets
 import agorartc
-from fastapi import FastAPI, Query, Form, Request, status
+from fastapi import FastAPI, Query, Form, Request, status, BackgroundTasks
 from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -39,11 +39,13 @@ class ClubhouseConfig(BaseModel):
 
 class DaConfig(BaseModel):
     client_id: Optional[int]
+    client_secret: Optional[str]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         config = utils.read_da_config()
         self.client_id = config.get('client_id')
+        self.client_secret = config.get('client_secret')
 
 
 ch_config = ClubhouseConfig()
@@ -53,6 +55,7 @@ client = Clubhouse(user_id=ch_config.user_id,
 
 da_config = DaConfig()
 da = da.DonationAlertsApi(da_config.client_id,
+                          da_config.client_secret,
                           settings.REDIRECT_URI,
                           settings.SCOPE)
 
@@ -66,17 +69,24 @@ async def index():
             and ch_config.language):
         return RedirectResponse('/enter_phone')
 
-    if not da_config.client_id:
+    if not (da_config.client_id and da_config.client_secret):
         return RedirectResponse('/da_config')
 
     return RedirectResponse(da.authorize())
 
 
-@app.get('/token')
-async def da_token_handler(access_token: str = Query(...)):
-    da.set_access_token(access_token)
+@app.get('/')
+async def default_handler():
+    return ''
+
+
+@app.get('/code')
+async def da_code_handler(background_tasks: BackgroundTasks,
+                          code: str = Query(...),):
+    da.get_access_token(code)
     da.get_user_info()
-    await connect()
+    background_tasks.add_task(connect, background_tasks)
+    return RedirectResponse('/', status_code=status.HTTP_303_SEE_OTHER)
 
 
 @app.get('/enter_phone', response_class=HTMLResponse)
@@ -99,7 +109,6 @@ async def clubhouse_config_handler(phone_number: str = Form(...),
                                    channel: str = Form(...),
                                    lang: str = Form(...)):
     data = client.complete_phone_number_auth(phone_number, code)
-    print(data)
     if 'user_profile' in data:
         ch_config.user_id = str(data['user_profile']['user_id'])
         ch_config.user_token = data['auth_token']
@@ -123,21 +132,26 @@ async def da_config_page(request: Request):
 
 
 @app.post('/da_config')
-async def da_config_handler(client_id: int = Form(...)):
+async def da_config_handler(client_id: int = Form(...),
+                            client_secret: str = Form(...)):
     da_config.client_id = client_id
+    da_config.client_secret = client_secret
     da.client_id = client_id
-    utils.write_da_config(client_id)
+    da.client_secret = client_secret
+    utils.write_da_config(client_id, client_secret)
     return RedirectResponse('/index', status_code=status.HTTP_303_SEE_OTHER)
 
 
 async def clubhouse_ping():
     while True:
+        print('PING')
         client.active_ping(ch_config.channel_id)
         await asyncio.sleep(300)
 
 
-async def connect():
+async def connect(background_tasks: BackgroundTasks):
     async with websockets.connect(settings.CENTRIFUGO_WS) as ws:
+        print('DA CONNECTED')
         await ws.send(json.dumps(da.ws_authorize()))
         data = await ws.recv()
         data = json.loads(data)
@@ -161,6 +175,7 @@ async def connect():
         channel_info = client.join_channel(ch_config.channel_id)
 
         await asyncio.gather(clubhouse_ping())
+        background_tasks.add_task(clubhouse_ping)
 
         channel_token = channel_info['token']
         users = channel_info['users']

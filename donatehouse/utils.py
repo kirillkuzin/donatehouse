@@ -46,13 +46,15 @@ def read_da_config(filename='setting.ini'):
 
 
 def write_da_config(client_id,
+                    client_str,
                     filename='setting.ini'):
     """ (str, str, str, str) -> bool
     Write Config. return True on successful file write
     """
     config = configparser.ConfigParser()
     config["DA"] = {
-        "client_id": client_id
+        "client_id": client_id,
+        "client_secret": client_str,
     }
     with open(filename, 'a') as config_file:
         config.write(config_file)
