@@ -129,6 +129,12 @@ async def da_config_handler(client_id: int = Form(...)):
     return RedirectResponse('/index', status_code=status.HTTP_303_SEE_OTHER)
 
 
+async def clubhouse_ping():
+    while True:
+        client.active_ping(ch_config.channel_id)
+        await asyncio.sleep(300)
+
+
 async def connect():
     async with websockets.connect(settings.CENTRIFUGO_WS) as ws:
         await ws.send(json.dumps(da.ws_authorize()))
@@ -152,6 +158,9 @@ async def connect():
                             agorartc.AUDIO_SCENARIO_GAME_STREAMING)
 
         channel_info = client.join_channel(ch_config.channel_id)
+
+        await asyncio.gather(clubhouse_ping())
+
         channel_token = channel_info['token']
         users = channel_info['users']
 
