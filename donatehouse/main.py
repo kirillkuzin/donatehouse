@@ -85,7 +85,7 @@ async def da_code_handler(background_tasks: BackgroundTasks,
                           code: str = Query(...),):
     da.get_access_token(code)
     da.get_user_info()
-    background_tasks.add_task(connect, background_tasks)
+    background_tasks.add_task(connect)
     return RedirectResponse('/', status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -149,7 +149,11 @@ async def clubhouse_ping():
         await asyncio.sleep(300)
 
 
-async def connect(background_tasks: BackgroundTasks):
+async def connect():
+    ch_config = ClubhouseConfig()
+    client = Clubhouse(user_id=ch_config.user_id,
+                       user_token=ch_config.user_token,
+                       user_device=ch_config.user_device)
     async with websockets.connect(settings.CENTRIFUGO_WS) as ws:
         print('DA CONNECTED')
         await ws.send(json.dumps(da.ws_authorize()))
@@ -174,8 +178,7 @@ async def connect(background_tasks: BackgroundTasks):
 
         channel_info = client.join_channel(ch_config.channel_id)
 
-        await asyncio.gather(clubhouse_ping())
-        background_tasks.add_task(clubhouse_ping)
+        asyncio.create_task(clubhouse_ping())
 
         channel_token = channel_info['token']
         users = channel_info['users']
@@ -189,6 +192,7 @@ async def connect(background_tasks: BackgroundTasks):
                     if data['success']:
                         speaker_permission = True
                         break
+                    print('Please, invite')
             await asyncio.sleep(10)
 
         while True:
@@ -208,7 +212,7 @@ async def connect(background_tasks: BackgroundTasks):
                             ch_config.channel_id,
                             "",
                             int(ch_config.user_id))
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.1)
             RTC.startAudioMixing('donation.mp3', False, True, 1)
             donation_duration = RTC.getAudioMixingDuration()
             await asyncio.sleep(donation_duration / 1000 + 0.5)
